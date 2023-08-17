@@ -50,9 +50,10 @@ class MicrosoftDNS(object):
 
     __wildcard_dns_cache = {}
 
-    def __init__(self, dnsserver, auth_domain, auth_username, auth_password, auth_dc_ip, auth_lm_hash, auth_nt_hash, verbose=False):
+    def __init__(self, dnsserver, dns_tcp, auth_domain, auth_username, auth_password, auth_dc_ip, auth_lm_hash, auth_nt_hash, verbose=False):
         super(MicrosoftDNS, self).__init__()
         self.dnsserver = dnsserver
+        self.dns_tcp = dns_tcp
         self.verbose = verbose
         self.auth_domain = auth_domain
         self.auth_username = auth_username
@@ -76,21 +77,22 @@ class MicrosoftDNS(object):
         dns_resolver = dns.resolver.Resolver()
         dns_resolver.nameservers = [self.dnsserver]
         dns_answer = None
-        # Try UDP
-        try:
-            dns_answer = dns_resolver.resolve(value, rdtype=rdtype, tcp=False)
-        except dns.resolver.NXDOMAIN:
-            # the domain does not exist so dns resolutions remain empty
-            pass
-        except dns.resolver.NoAnswer as e:
-            # domains existing but not having AAAA records is common
-            pass
-        except dns.resolver.NoNameservers as e:
-            pass
-        except dns.exception.DNSException as e:
-            pass
+        if not self.dns_tcp:
+            # Try UDP
+            try:
+                dns_answer = dns_resolver.resolve(value, rdtype=rdtype, tcp=False)
+            except dns.resolver.NXDOMAIN:
+                # the domain does not exist so dns resolutions remain empty
+                pass
+            except dns.resolver.NoAnswer as e:
+                # domains existing but not having AAAA records is common
+                pass
+            except dns.resolver.NoNameservers as e:
+                pass
+            except dns.exception.DNSException as e:
+                pass
 
-        if dns_answer is None:
+        if self.dns_tcp or dns_answer is None:
             # Try TCP
             try:
                 dns_answer = dns_resolver.resolve(value, rdtype=rdtype, tcp=True)
@@ -367,6 +369,7 @@ def parse_args():
     authconn.add_argument('--dc-ip', required=True, action='store', metavar="ip address", help='IP Address of the domain controller or KDC (Key Distribution Center) for Kerberos. If omitted it will use the domain part (FQDN) specified in the identity parameter')
     authconn.add_argument("-d", "--domain", dest="auth_domain", metavar="DOMAIN", action="store", default="", help="(FQDN) domain to authenticate to")
     authconn.add_argument("-u", "--user", dest="auth_username", metavar="USER", action="store", default="", help="user to authenticate with")
+    authconn.add_argument("--dns-tcp", dest="dns_tcp", action="store_true", default=False, help="Use TCP for DNS resolution")
 
     secret = parser.add_argument_group("Credentials")
     cred = secret.add_mutually_exclusive_group()
@@ -640,6 +643,7 @@ if __name__ == '__main__':
 
     mdns = MicrosoftDNS(
         dnsserver=options.dc_ip,
+        dns_tcp=options.dns_tcp,
         auth_domain=options.auth_domain,
         auth_username=options.auth_username,
         auth_password=options.auth_password,
